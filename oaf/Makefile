@@ -3,9 +3,6 @@ include $(TOPDIR)/rules.mk
 include $(INCLUDE_DIR)/kernel.mk
 
 PKG_NAME:=oaf
-PKG_VERSION:=5.0
-PKG_RELEASE:=1
-
 include $(INCLUDE_DIR)/package.mk
 
 PKG_AUTOLOAD:=oaf
@@ -24,6 +21,10 @@ endef
 define KernelPackage/oaf/description
   open appfilter kernel module 
 endef
+
+
+EXTRA_CFLAGS:=-Wno-declaration-after-statement -Wno-strict-prototypes -Wno-unused-variable -Wno-implicit-fallthrough -Wno-missing-braces -Wno-parentheses
+
 
 
 MAKE_OPTS:= \

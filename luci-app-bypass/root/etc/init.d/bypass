@@ -15,7 +15,13 @@ CON_T=$SDNS/rules.conf
 PID=/var/run/smartdns.pid
 LOG=/var/log/bypass.log
 BIN_DIR=/usr/share/bypass
-DNS_FILE=/tmp/dnsmasq.d/dnsmasq-by.conf
+# Get the default DNSMasq config ID from the UCI configuration
+DEFAULT_DNSMASQ_CFGID=$(uci show dhcp.@dnsmasq[0] | awk -F '.' '{print $2}' | awk -F '=' '{print $1}' | head -1)
+# Locate the dnsmasq.conf file that contains the conf-dir option
+DNSMASQ_CONF_PATH=$(grep -l "^conf-dir=" "/tmp/etc/dnsmasq.conf.${DEFAULT_DNSMASQ_CFGID}")
+# Extract the directory path from the conf-dir line
+DNSMASQ_CONF_DIR=$(grep '^conf-dir=' "$DNSMASQ_CONF_PATH" | cut -d'=' -f2 | head -n 1)
+DNS_FILE=${DNSMASQ_CONF_DIR%*/}/dnsmasq-by.conf
 DNS_DIR=/tmp/dnsmasq.by
 O=$DNS_DIR/tmp
 CRON="grep -q $BIN_DIR $CRON_FILE && sed -i '/\/share\/bypass/d' $CRON_FILE"
@@ -72,9 +78,9 @@ f_bin(){
 	ssr) ret=$(which ssr-redir);;
 	ssr-local) ret=$(which ssr-local);;
 	ssr-server) ret=$(which ssr-server);;
-	vmess|vless) ret=$(which xray);;
+	v2ray) ret=$(which xray) || ret=$(which v2ray);;
+	hysteria) ret=$(which hysteria);;
 	trojan) ret=$(which trojan-plus);;
-	trojan-go) ret=$(which trojan-go);;
 	naiveproxy) ret=$(which naive);;
 	socks5|tun) ret=$(which redsocks2);;
 	esac
@@ -150,18 +156,18 @@ gen_config_file(){
 			}
 		EOF
 		;;
-	vmess|vless)
+	v2ray|hysteria)
 		[ $rtype = udp ] && smode=udp || smode=tcp
 		[ $rtype = socks ] && lport=0
-		lua $BIN_DIR/genv2config $1 $smode $lport $ssport $serv_ip >$config_file
+		lua $BIN_DIR/gen_config $1 $smode $lport $ssport $serv_ip >$config_file
 		sed -i 's/\\//g' $config_file
 		;;
-	trojan|trojan-go)
+	trojan)
 		case $rtype in
 		tcp|udp|nf) smode=nat;;
 		socks) smode=client;;
 		esac
-		lua $BIN_DIR/gentrojanconfig $1 $smode $lport $serv_ip $threads >$config_file
+		lua $BIN_DIR/gen_config $1 $smode $lport "" $serv_ip >$config_file
 		sed -i 's/\\//g' $config_file
 		;;
 	esac
@@ -397,7 +403,7 @@ start_retcp(){
 		[ $ttype = ss ] && name=Shadowsocks || name=ShadowsocksR
 		log "Main Node: $name $threads Threads Started!"
 		;;
-	vmess|vless)
+	v2ray|hysteria)
 		if [ $SO_SERVER = $GLOBAL_SERVER ];then
 			port=$(uci_get_by_type socks5_proxy local_port 1080)
 			socks5_start=1
@@ -412,20 +418,14 @@ start_retcp(){
 			log "Socks5 Node: $($cmd -version | head -1 | awk '{print$1,$2}') Started!"
 		fi
 		;;
-	trojan|trojan-go)
+	trojan)
 		gen_config_file $GLOBAL_SERVER $rtype "" $server
-		if [ $type = trojan ];then
-			redir_tcp=$threads
-			for i in $(seq 1 $threads);do
-				$cmd --config $config_file >$log_file 2>&1 &
-			done
-			name=Trojan-Plus
-			ver="$($cmd --version 2>&1 | head -1 | awk '{print$3}')"
-		else
+		redir_tcp=$threads
+		for i in $(seq 1 $threads);do
 			$cmd --config $config_file >$log_file 2>&1 &
-			name=Trojan-Go
-			ver="$($cmd --version 2>&1 | head -1 | awk '{print$2}')"
-		fi
+		done
+		name=Trojan-Plus
+		ver="$($cmd --version 2>&1 | head -1 | awk '{print$3}')"
 		log "Main Node: $name (Ver $ver) $threads Threads Started!"
 		;;
 	naiveproxy)
@@ -468,21 +468,16 @@ start_reudp(){
 		[ $utype = ss ] && name=Shadowsocks || name=ShadowsocksR
 		log "UDP Relay: $name Started!"
 		;;
-	vmess|vless)
+	v2ray|hysteria)
 		gen_config_file $UDP_RELAY_SERVER $rtype 0 $udp_server
 		$cmd -c $config_file >$log_file 2>&1 &
 		log "UDP Relay: $($cmd -version | head -1 | awk '{print$1,$2}') Started!"
 		;;
-	trojan|trojan-go)
+	trojan)
 		gen_config_file $UDP_RELAY_SERVER $rtype "" $udp_server
 		$cmd --config $config_file >$log_file 2>&1 &
-		[ $utype = trojan ] && {
-			name=Trojan-Plus
-			ver="$($cmd --version 2>&1 | head -1 | awk '{print$3}')"
-		} || {
-			name=Trojan-Go
-			ver="$($cmd --version 2>&1 | head -1 | awk '{print$2}')"
-		}
+		name=Trojan-Plus
+		ver="$($cmd --version 2>&1 | head -1 | awk '{print$3}')"
 		log "UDP Relay: $name (Ver $ver) Started!"
 		;;
 	naiveproxy)
@@ -518,20 +513,17 @@ start_renf(){
 		[ $ntype = ss ] && name=Shadowsocks || name=ShadowsocksR
 		log "NF Shunt : $name Started!"
 		;;
-	vmess|vless)
+	v2ray|hysteria)
 		gen_config_file $NF_SERVER $rtype 0 $nf_ip
 		$cmd -c $config_file >$log_file 2>&1 &
 		log "NF Shunt : $($cmd -version | head -1 | awk '{print$1,$2}') Started!"
 		;;
-	trojan|trojan-go)
+	trojan)
 		gen_config_file $NF_SERVER $rtype "" $nf_ip
 		$cmd --config $config_file >$log_file 2>&1 &
 		[ $ntype = trojan ] && {
 			name=Trojan-Plus
 			ver="$($cmd --version 2>&1 | head -1 | awk '{print$3}')"
-		} || {
-			name=Trojan-Go
-			ver="$($cmd --version 2>&1 | head -1 | awk '{print$2}')"
 		}
 		log "NF Shunt : $name (Ver $ver) Started!"
 		;;
@@ -572,20 +564,17 @@ start_local(){
 		[ $type = ss ] && name=Shadowsocks || name=ShadowsocksR
 		log "Socks5 Node: $name Started!"
 		;;
-	vmess|vless)
+	v2ray|hysteria)
 		gen_config_file $SO_SERVER $rtype $socks5_port $socks5_ip
 		$cmd -c $config_file >$log_file 2>&1 &
 		log "Socks5 Node: $($cmd -version | head -1 | awk '{print$1,$2}') Started!"
 		;;
-	trojan|trojan-go)
+	trojan)
 		gen_config_file $SO_SERVER $rtype "" $socks5_ip
 		$cmd --config $config_file >$log_file 2>&1 &
 		[ $type = trojan ] && {
 			name=Trojan-Plus
 			ver="$($cmd --version 2>&1 | head -1 | awk '{print$3}')"
-		} || {
-			name=Trojan-Go
-			ver="$($cmd --version 2>&1 | head -1 | awk '{print$2}')"
 		}
 		log "Socks5 Node: $name (Ver $ver) Started!"
 		;;
@@ -715,18 +704,17 @@ gen_dns(){
 		for i in $dns_tmp;do ipset add ss_spec_wan_ac $i 2>/dev/null;done
 	fi
 	smartdns_flag=1
-	mkdir -p /tmp/dnsmasq.d $SDNS $DNS_DIR
+	mkdir -p ${DNSMASQ_CONF_DIR%*/} $SDNS $DNS_DIR
 	cat >$DNS_T <<-EOF
 		force-AAAA-SOA yes
 		speed-check-mode none
-		dualstack-ip-selection yes
 		cache-size 0
 		cache-persist no
 		log-level fatal
 		log-file $LOG
 	EOF
-	echo "bind :5335 -group a" >>$DNS_T
-	echo "bind :5336 -group e -no-rule-soa" >>$DNS_T
+	echo "bind :5335 -group a -no-cache -no-dualstack-selection" >>$DNS_T
+	echo "bind :5336 -group e -no-rule-soa -no-cache" >>$DNS_T
 	if [ $dns_mode_o = "doh" ];then
 		if [ "$dns_a" = 1 ];then
 			echo "server-https $doh_o_a -group a -exclude-default-group" >>$DNS_T
@@ -824,7 +812,7 @@ gen_dns(){
 	rm -f $O
 	[ $(find $DNS_DIR -name \* -exec cat {} \; 2>/dev/null | wc -l) = 0 ] && rm -rf $DNS_DIR || echo conf-dir=$DNS_DIR >>$DNS_FILE
 	[ $run_mode = router ] && chinadns_flag=1
-	killall -q -9 smartdns
+	killall -q -3 smartdns
 	start_dns
 	/etc/init.d/dnsmasq restart >/dev/null 2>&1
 	preload
@@ -1019,15 +1007,18 @@ stop(){
 	kill -9 $(ps -w | grep by-monitor | grep -v grep | awk '{print$1}') 2>/dev/null
 	kill -9 $(ps -w | grep by-preload | grep -v grep | awk '{print$1}') 2>/dev/null
 	kill -9 $(ps -w | grep $VAR | grep -v grep | awk '{print$1}') 2>/dev/null
-	killall -q -9 smartdns chinadns-ng kcptun-client microsocks
+	killall -q -3 smartdns chinadns-ng kcptun-client microsocks
 	rm -rf $DNS_DIR $VAR $DNS_FILE $CON_T /var/lock/bypass-update.lock
 	[ -z "$GLOBAL_SERVER" ] && grep -q bypass $CRON_FILE && sed -i '/bypass/d' $CRON_FILE && /etc/init.d/cron restart
 	if [ $STATUS = Y -o -z "$GLOBAL_SERVER" ];then
 		if [[ -f /etc/init.d/AdGuardHome && "$(uci -q get AdGuardHome.AdGuardHome.redirect)" == "exchange"  ]]; then
 			/etc/init.d/AdGuardHome stop >/dev/null 2>&1 &
 		fi
-		rm -rf $SDNS $PID $LOC $LOG
+		rm -rf $SDNS $PID $LOC
 		/etc/init.d/dnsmasq restart >/dev/null 2>&1
+		if [ $STATUS = Y -a -z "$GLOBAL_SERVER" ];then
+			rm -rf $LOG
+		fi
 	elif [ -s $DNS_T ];then
 		cat > $DNS_T <<-EOF
 			speed-check-mode none

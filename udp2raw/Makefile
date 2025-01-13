@@ -1,19 +1,16 @@
+# SPDX-License-Identifier: MIT
 #
 # Copyright (c) 2017 Yu Wang <wangyucn@gmail.com>
-#
-# This is free software, licensed under the MIT.
-# See /LICENSE for more information.
-#
 
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=udp2raw
 PKG_VERSION:=20200818.0
-PKG_RELEASE:=$(AUTORELEASE)
+PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://codeload.github.com/wangyu-/udp2raw/tar.gz/$(PKG_VERSION)?
-PKG_HASH:=skip
+PKG_HASH:=1e5bf4eb7b7ad94f4cf358614ecc6d7069409486220aa6d080a56ecab2fc2cd8
 
 PKG_LICENSE:=MIT
 PKG_LICENSE_FILES:=LICENSE
@@ -29,10 +26,11 @@ define Package/udp2raw
   TITLE:=Tunnel which turns UDP Traffic into Encrypted FakeTCP/UDP/ICMP Traffic
   URL:=https://github.com/wangyu-/udp2raw
   DEPENDS:=+libstdcpp +libpthread +librt
+  PROVIDES:=udp2raw-tunnel
 endef
 
 define Package/udp2raw/description
-  udp2raw is a tunnel which turns UDP Traffic into Encrypted FakeTCP/UDP/ICMP Traffic by using Raw Socket.
+  udp2raw-tunnel is a tunnel which turns UDP Traffic into Encrypted FakeTCP/UDP/ICMP Traffic by using Raw Socket.
 endef
 
 MAKE_FLAGS += cross

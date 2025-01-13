@@ -2,7 +2,6 @@ module("luci.controller.bypass",package.seeall)
 local http = require "luci.http"
 local api = require "luci.model.cbi.bypass.api"
 local xray = require "luci.model.cbi.bypass.xray"
-local trojan_go = require "luci.model.cbi.bypass.trojan_go"
 function index()
 	if not nixio.fs.access("/etc/config/bypass") then
 		return
@@ -29,8 +28,6 @@ function index()
 	entry({"admin", "services", "bypass", "xray_update"}, call("xray_update")).leaf = true
 	entry({"admin", "services", "bypass", "v2ray_check"}, call("v2ray_check")).leaf = true
 	entry({"admin", "services", "bypass", "v2ray_update"}, call("v2ray_update")).leaf = true
-	entry({"admin", "services", "bypass", "trojan_go_check"}, call("trojan_go_check")).leaf = true
-	entry({"admin", "services", "bypass", "trojan_go_update"}, call("trojan_go_update")).leaf = true
 	entry({'admin', 'services', "bypass", 'ip'}, call('check_ip')) -- 获取ip情况
 	entry({"admin", "services", "bypass", "status"}, call("status")).leaf = true
 	entry({"admin", "services", "bypass", "socks_status"}, call("socks_status")).leaf = true
@@ -39,7 +36,7 @@ function index()
 end
 
 function subscribe()
-	luci.sys.call("/usr/share/bypass/subscribe >> /tmp/bypass.log 2>&1")
+	luci.sys.call("/usr/share/bypass/subscribe >> /var/log/bypass.log 2>&1")
 	luci.http.prepare_content("application/json")
 	luci.http.write_json({ret=1})
 end
@@ -110,7 +107,7 @@ function check_port()
 		luci.sys.exec(s.server..">>/a")
 		local dp=luci.sys.exec("netstat -unl | grep 5336 >/dev/null && echo -n 5336 || echo -n 53")
 		local ip=luci.sys.exec("echo "..s.server.." | grep -E \"^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$\" || \\\
-		nslookup "..s.server.." 127.0.0.1#"..dp.." 2>/dev/null | grep Address | awk -F' ' '{print$NF}' | grep -E \"^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$\" | sed -n 1p")
+		nslookup "..s.server.." 127.0.0.1:"..dp.." 2>/dev/null | grep Address | awk -F' ' '{print$NF}' | grep -E \"^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$\" | sed -n 1p")
 		ip=luci.sys.exec("echo -n "..ip)
 		iret=luci.sys.call("ipset add ss_spec_wan_ac "..ip.." 2>/dev/null")
 		socket=nixio.socket("inet","stream")
@@ -155,38 +152,6 @@ function xray_update()
 	http_write_json(json)
 end
 
-function trojan_go_check()
-	local json = trojan_go.to_check("")
-	http_write_json(json)
-end
-
-function trojan_go_update()
-	local json = nil
-	local task = http.formvalue("task")
-	if task == "extract" then
-		json = trojan_go.to_extract(http.formvalue("file"), http.formvalue("subfix"))
-	elseif task == "move" then
-		json = trojan_go.to_move(http.formvalue("file"))
-	else
-		json = trojan_go.to_download(http.formvalue("url"))
-	end
-
-	http_write_json(json)
-end
-
-function get_iso(ip)
-    local mm = require 'maxminddb'
-    local db = mm.open('/usr/share/bypass/GeoLite2-Country.mmdb')
-    local res = db:lookup(ip)
-    return string.lower(res:get('country', 'iso_code'))
-end
-
-function get_cname(ip)
-    local mm = require 'maxminddb'
-    local db = mm.open('/usr/share/bypass/GeoLite2-Country.mmdb')
-    local res = db:lookup(ip)
-    return string.lower(res:get('country', 'names', 'zh-CN'))
-end
 
 function check_site(host, port)
     local nixio = require "nixio"
@@ -198,26 +163,43 @@ function check_site(host, port)
     return ret
 end
 
--- 获取当前代理状态 与节点ip
+function get_ip_geo_info()
+    local result = luci.sys.exec('curl --retry 3 -m 10 -LfsA "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.183 Safari/537.36" http://ip-api.com/json/')
+    local json = require "luci.jsonc"
+    local info = json.parse(result)
+    
+    return {
+        flag = string.lower(info.countryCode) or "un",
+        country = get_country_name(info.countryCode) or "Unknown",
+        ip = info.query,
+        isp = info.isp
+    }
+end
+
+function get_country_name(countryCode)
+    local country_names = {
+        US = "美国", CN = "中国", JP = "日本", GB = "英国", DE = "德国",
+        FR = "法国", BR = "巴西", IT = "意大利", RU = "俄罗斯", CA = "加拿大",
+        KR = "韩国", ES = "西班牙", AU = "澳大利亚", MX = "墨西哥", ID = "印度尼西亚",
+        NL = "荷兰", TR = "土耳其", CH = "瑞士", SA = "沙特阿拉伯", SE = "瑞典",
+        PL = "波兰", BE = "比利时", AR = "阿根廷", NO = "挪威", AT = "奥地利",
+        TW = "台湾", ZA = "南非", TH = "泰国", DK = "丹麦", MY = "马来西亚",
+        PH = "菲律宾", SG = "新加坡", IE = "爱尔兰", HK = "香港", FI = "芬兰",
+        CL = "智利", PT = "葡萄牙", GR = "希腊", IL = "以色列", NZ = "新西兰",
+        CZ = "捷克", RO = "罗马尼亚", VN = "越南", UA = "乌克兰", HU = "匈牙利",
+        AE = "阿联酋", CO = "哥伦比亚", IN = "印度", EG = "埃及", PE = "秘鲁", TW = "台湾"
+    }
+    return country_names[countryCode]
+end
+
 function check_ip()
     local e = {}
-    local d = {}
     local port = 80
-    local ip = luci.sys.exec('curl --retry 3 -m 10 -LfsA "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.183 Safari/537.36" http://api.ipify.org/')
-    d.flag = 'un'
-    d.country = 'Unknown'
-    if (ip ~= '') then
-        local status, code = pcall(get_iso, ip)
-        if (status) then
-            d.flag = code
-        end
-        local status1, country = pcall(get_cname, ip)
-        if (status1) then
-            d.country = country
-        end
-    end
-    e.outboard = ip
-    e.outboardip = d
+    local geo_info = get_ip_geo_info(ip)
+    e.ip = geo_info.ip
+    e.flag = geo_info.flag
+    e.country = geo_info.country
+    e.isp = geo_info.isp
     e.baidu = check_site('www.baidu.com', port)
     e.taobao = check_site('www.taobao.com', port)
     e.google = check_site('www.google.com', port)
@@ -244,7 +226,7 @@ function connect_status()
 	local e = {}
 	e.use_time = ""
 	local url = luci.http.formvalue("url")
-	local result = luci.sys.exec('curl --connect-timeout 3 -o /dev/null -I -skL -w "%{http_code}:%{time_starttransfer}" ' .. url)
+	local result = luci.sys.exec('curl --connect-timeout 3 -o /dev/null -i -sk -w "%{http_code}:%{time_starttransfer}" ' .. url)
 	local code = tonumber(luci.sys.exec("echo -n '" .. result .. "' | awk -F ':' '{print $1}'") or "0")
 	if code ~= 0 then
 		local use_time = luci.sys.exec("echo -n '" .. result .. "' | awk -F ':' '{print $2}'")

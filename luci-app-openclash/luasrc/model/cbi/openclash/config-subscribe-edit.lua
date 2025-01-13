@@ -23,7 +23,7 @@ m.description=translate("Convert Subscribe function of Online is Supported By su
 "<br/>"..
 "<br/>"..translate("If you need to customize the external configuration file (subscription conversion template), please write it according to the instructions, upload it to the accessible location of the external network, and fill in the address correctly when using it")..
 "<br/>"..
-"<br/>"..translate("If you have a recommended external configuration file (subscription conversion template), you can modify by following The file format of /usr/share/opencrash/res/sub_ini.list and pr")
+"<br/>"..translate("If you have a recommended external configuration file (subscription conversion template), you can modify by following The file format of /usr/share/openclash/res/sub_ini.list and pr")
 m.redirect = luci.dispatcher.build_url("admin/services/openclash/config-subscribe")
 if m.uci:get(openclash, sid) ~= "config_subscribe" then
 	luci.http.redirect(m.redirect)
@@ -43,10 +43,19 @@ o.rmempty = true
 
 ---- address
 o = s:option(Value, "address", translate("Subscribe Address"))
-o.description = font_red..bold_on..translate("SS/SSR/Vmess or Other Link And Subscription Address is Supported When Online Subscription Conversion is Enabled, Please Separate Multiple Links With |")..bold_off..font_off
+o.template = "cbi/tvalue"
+o.rows = 10
+o.wrap = "off"
+o.description = font_red..bold_on..translate("SS/SSR/Vmess or Other Link And Subscription Address is Supported When Online Subscription Conversion is Enabled, Multiple Links Should be One Per Line or Separated By |")..bold_off..font_off
 o.placeholder = translate("Not Null")
-o.datatype = "or(host, string)"
 o.rmempty = false
+function o.validate(self, value)
+	if value then
+		value = value:gsub("\r\n?", "\n")
+		value = value:gsub("%c*$", "")
+	end
+	return value
+end
 
 local sub_path = "/tmp/dler_sub"
 local info, token, get_sub, sub_info
@@ -73,11 +82,20 @@ if token then
 		fs.unlink(sub_path)
 	end
 end
-	
+
+---- UA
+o = s:option(Value, "sub_ua", "User-Agent")
+o.description = font_red..bold_on..translate("Used for Downloading Subscriptions, Defaults to Clash")..bold_off..font_off
+o:value("clash.meta")
+o:value("clash-verge/v1.5.1")
+o:value("Clash")
+o.default = "clash.meta"
+o.rmempty = true
+
 ---- subconverter
 o = s:option(Flag, "sub_convert", translate("Subscribe Convert Online"))
-o.description = translate("Convert Subscribe Online With Template, Mix Proxies and Keep Settings options Will Not Effect")
-o.default=0
+o.description = translate("Convert Subscribe Online With Template")
+o.default = 0
 
 ---- Convert Address
 o = s:option(Value, "convert_address", translate("Convert Address"))
@@ -85,10 +103,11 @@ o.rmempty     = true
 o.description = font_red..bold_on..translate("Note: There is A Risk of Privacy Leakage in Online Convert")..bold_off..font_off
 o:depends("sub_convert", "1")
 o:value("https://api.dler.io/sub", translate("api.dler.io")..translate("(Default)"))
-o:value("https://subconverter.herokuapp.com/sub", translate("subconverter.herokuapp.com")..translate("(Default)"))
+o:value("https://v.id9.cc/sub", translate("v.id9.cc")..translate("(Support Vless By Pinyun)"))
 o:value("https://sub.id9.cc/sub", translate("sub.id9.cc"))
 o:value("https://api.wcc.best/sub", translate("api.wcc.best"))
 o.default = "https://api.dler.io/sub"
+o.placeholder = "https://api.dler.io/sub"
 
 ---- Template
 o = s:option(ListValue, "template", translate("Template Name"))
@@ -115,7 +134,7 @@ o = s:option(ListValue, "emoji", translate("Emoji"))
 o.rmempty     = false
 o:value("false", translate("Disable"))
 o:value("true", translate("Enable"))
-o.default="false"
+o.default = "false"
 o:depends("sub_convert", "1")
 
 ---- udp
@@ -123,7 +142,7 @@ o = s:option(ListValue, "udp", translate("UDP Enable"))
 o.rmempty     = false
 o:value("false", translate("Disable"))
 o:value("true", translate("Enable"))
-o.default="false"
+o.default = "false"
 o:depends("sub_convert", "1")
 
 ---- skip-cert-verify
@@ -131,7 +150,7 @@ o = s:option(ListValue, "skip_cert_verify", translate("skip-cert-verify"))
 o.rmempty     = false
 o:value("false", translate("Disable"))
 o:value("true", translate("Enable"))
-o.default="false"
+o.default = "false"
 o:depends("sub_convert", "1")
 
 ---- sort
@@ -139,7 +158,7 @@ o = s:option(ListValue, "sort", translate("Sort"))
 o.rmempty     = false
 o:value("false", translate("Disable"))
 o:value("true", translate("Enable"))
-o.default="false"
+o.default = "false"
 o:depends("sub_convert", "1")
 
 ---- node type
@@ -147,7 +166,7 @@ o = s:option(ListValue, "node_type", translate("Append Node Type"))
 o.rmempty     = false
 o:value("false", translate("Disable"))
 o:value("true", translate("Enable"))
-o.default="false"
+o.default = "false"
 o:depends("sub_convert", "1")
 
 ---- rule provider
@@ -156,7 +175,13 @@ o.description = font_red..bold_on..translate("Note: Please Make Sure Backend Ser
 o.rmempty     = false
 o:value("false", translate("Disable"))
 o:value("true", translate("Enable"))
-o.default="false"
+o.default = "false"
+o:depends("sub_convert", "1")
+
+---- custom params
+o = s:option(DynamicList, "custom_params", translate("Custom Params"))
+o.description = font_red..bold_on..translate("eg: \"rename=\\s+([2-9])[xX]@ (HIGH:$1)\"")..bold_off..font_off
+o.rmempty     = false
 o:depends("sub_convert", "1")
 
 ---- key
@@ -199,4 +224,5 @@ o.write = function()
    luci.http.redirect(m.redirect)
 end
 
+m:append(Template("openclash/toolbar_show"))
 return m

@@ -6,8 +6,5 @@ function index()
 	end
 	
 	local page
-
-	page = entry({"admin", "network", "eqos"}, cbi("eqos"), "EQoS")
-	page.dependent = true
-	page.acl_depends = { "luci-app-eqos" }
+	entry({"admin", "network", "eqos"}, cbi("eqos"), _("EQoS"), 121).dependent = true
 end
