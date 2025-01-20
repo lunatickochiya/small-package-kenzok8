@@ -31,8 +31,8 @@
 	local uci		= require 'luci.model.uci'.cursor()
 
 	-- Fetch Local Background Media
-	
-	function glob(...)
+
+	local function glob(...)
 		local iter, code, msg = fs.glob(...)
 		if iter then
 			return nutil.consume(iter)
@@ -42,46 +42,61 @@
 	end
 
 
-	function fetchMedia(path,themeDir)
-		local backgroundTable 	= {}
-		local backgroundCount 	= 0
+	local imageTypes = " jpg png gif webp "
+	local videoTypes = " mp4 webm "
+	local allTypes = imageTypes .. videoTypes
+	local function fetchMedia(path, themeDir)
+		local backgroundTable = {}
+		local backgroundCount = 0
 		for i, f in ipairs(glob(path)) do
 			attr = fs.stat(f)
 			if attr then
 				local ext = fs.basename(f):match(".+%.(%w+)$")
-				if ext == "jpg" or ext == "png" or ext == "gif" or ext == "mp4" then
+				if ext ~= nil then
+					ext = ext:lower()
+				end
+				if ext ~= nil and string.match(allTypes, " "..ext.." ") ~= nil then
 					local bg = {}
 					bg.type = ext
 					bg.url = themeDir .. fs.basename(f)
-					table.insert(backgroundTable,bg)
+					table.insert(backgroundTable, bg)
 					backgroundCount = backgroundCount + 1
 				end
 			end
 		end
-		return backgroundTable,backgroundCount
+		return backgroundTable, backgroundCount
+	end
+	local function selectBackground(themeDir)
+		local bgUrl			= media .. "/img/bg1.jpg"
+		local backgroundType	= "Image"
+		local mimeType			= ""
+
+		if fs.access("/etc/config/argon") then
+			local online_wallpaper = uci:get_first('argon', 'global', 'online_wallpaper') or (uci:get_first('argon', 'global', 'bing_background') == '1' and 'bing')
+			if (online_wallpaper and online_wallpaper ~= "none") then
+				local picurl = sys.exec("/usr/libexec/argon/online_wallpaper")
+				if (picurl and picurl ~= '') then
+					return picurl, "Image", ""
+				end
+			end
+		end
+
+		local backgroundTable, backgroundCount = fetchMedia("/www" .. themeDir .. "*", themeDir)
+		if ( backgroundCount > 0 ) then
+			local currentBg = backgroundTable[math.random(1, backgroundCount)]
+			bgUrl			= currentBg.url
+			if (string.match(videoTypes, " "..currentBg.type.." ") ~= nil) then
+				backgroundType	= "Video"
+				mimeType		= "video/" .. currentBg.type
+			end
+		end
+
+		return bgUrl, backgroundType, mimeType
 	end
 
 	local boardinfo			= util.ubus("system", "board")
-	local bingUrl 			= "http://www.bing.com/"
-	local bingApiUrl 		= bingUrl .. "HPImageArchive.aspx?format=js&idx=0&n=1&mkt=en-US"
 	local themeDir			= media .. "/background/"
-	local bgUrl 			= media .. "/img/bg1.jpg"
-	local useBing			= fs.access('/etc/config/argon') and "1" or "0"
-	local backgroundTable, backgroundCount 		= fetchMedia("/www" .. themeDir .. "*",themeDir)
-	local backgroundType 	= "Image"
-
-	if ( backgroundCount > 0 ) then
-		local currentBg = backgroundTable[math.random(1,backgroundCount)]
-		bgUrl 			= currentBg.url
-		if (currentBg.type == "mp4" ) then
-			backgroundType 	= "Video"
-		end
-	else
-		local bing = sys.exec("wget --timeout=0.5 -qO- '%s'" %bingApiUrl)
-		if (bing and bing ~= '') then
-			bgUrl 	= bingUrl .. json.parse(bing).images[1].url
-		end
-	end
+	local bgUrl, backgroundType, mimeType = selectBackground(themeDir)
 %>
 <!-- Login Page Start -->
 <div class="login-page">
@@ -89,7 +104,7 @@
 	<!-- Video Player Start -->
 	<div class="video">
 		<video autoplay loop muted id="video">
-			<source src="<%=bgUrl%>" type="video/mp4">
+			<source src="<%=bgUrl%>" type="<%=mimeType%>">
 		</video>
 	</div>
 	<div class="volume-control mute"></div>
@@ -115,7 +130,7 @@
 		<div class="login-form">
 			<!-- Logo Start -->
 			<a class="brand" href="/"><img src="<%=media%>/img/argon.svg" class="icon">
-				<span class="brand-text"><%=striptags( (boardinfo.hostname or "?") .. ( (node and node.title) and ' - ' .. translate(node.title) or '')) %></span>
+				<span class="brand-text"><%=striptags( (boardinfo.hostname or "?") ) %></span>
 			</a>
 			<!-- Logo End -->
 			<!-- Login Form Start -->
@@ -136,7 +151,7 @@
 					</div>
 				</div>
 				<div>
-					<input type="submit" value="<%:Login%>" class="cbi-button cbi-button-apply" />
+					<input type="submit" value="<%:Log in%>" class="cbi-button cbi-button-apply" />
 				</div>
 			</form>
 			<!-- Login Form End -->
@@ -145,28 +160,4 @@
 				if (input)
 					input.focus();
 			//]]></script>
-			<%
-			local uci  = require "luci.model.uci".cursor()
-			local fs  = require "nixio.fs"
-			local https_key = uci:get("uhttpd", "main", "key")
-			local https_port = uci:get("uhttpd", "main", "listen_https")
-			if type(https_port) == "table" then
-				https_port = https_port[1]
-			end
-
-			if https_port and fs.access(https_key) then
-				https_port = https_port:match("(%d+)$")
-			%>
-			<script type="text/javascript">//<![CDATA[
-				if (document.location.protocol != 'https:') {
-					var url = 'https://' + window.location.hostname + ':' + '<%=https_port%>' + window.location.pathname;
-					var img = new Image;
-					img.onload = function () { window.location = url };
-					img.src = 'https://' + window.location.hostname + ':' + '<%=https_port%>' + '<%=resource%>/cbi/up.gif?' + Math.random();;
-					setTimeout(function () {
-						img.src = ''
-					}, 5000);
-				}
-			//]]></script>
-			<% end %>
-<%+themes/argon/out_footer_login%>
+<%+themes/argon/footer_login%>

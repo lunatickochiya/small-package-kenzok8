@@ -5,13 +5,13 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=quickjspp
-PKG_RELEASE:=$(AUTORELEASE)
+PKG_RELEASE:=1
 
 PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL:=https://github.com/ftk/quickjspp.git
-PKG_SOURCE_DATE:=2021-11-30
-PKG_SOURCE_VERSION:=dcfe28cab7805c22a172dc5bd0d4aad353ea3fc9
-PKG_MIRROR_HASH:=skip
+PKG_SOURCE_DATE:=2023-12-21
+PKG_SOURCE_VERSION:=0c00c48895919fc02da3f191a2da06addeb07f09
+PKG_MIRROR_HASH:=2adf33c7942c4d926e70045e3d6896c9ca95769743470186936bcf33a26d2798
 
 PKG_MAINTAINER:=Tianling Shen <cnsztl@immortalwrt.org>
 
@@ -21,23 +21,33 @@ CMAKE_INSTALL:=1
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/cmake.mk
 
-define Package/quickjspp
+define Package/libquickjs
   SECTION:=lib
   CATEGORY:=Libraries
-  URL:=https://github.com/ftk/quickjspp
-  TITLE:=QuickJS wrapper for C++
-  DEPENDS:=+libatomic +libpthread
-  BUILDONLY:=1
+  URL:=https://bellard.org/quickjs/
+  TITLE:=A small and embeddable Javascript engine
+  # mips(el) & glibc require it
+  DEPENDS:=+libatomic
 endef
 
-define Package/quickjspp/description
-  QuickJSPP is QuickJS wrapper for C++. It allows you to easily embed
-  Javascript engine into your program.
+define Package/libquickjs/description
+  QuickJS is a small and embeddable Javascript engine. It supports the
+  ES2020 specification including modules, asynchronous generators,
+  proxies and BigInt.
+
+  It optionally supports mathematical extensions such as big decimal
+  floating point numbers (BigDecimal), big binary floating point
+  numbers (BigFloat) and operator overloading.
 endef
 
-CMAKE_OPTIONS += \
+CMAKE_OPTIONS+= \
+	-DBUILD_SHARED_LIBS=ON \
 	-DBUILD_TESTING=OFF \
-	-DCMAKE_EXE_LINKER_FLAGS="-latomic" \
-	-DCMAKE_REQUIRED_LIBRARIES=stdc++fs
+	-DCMAKE_EXE_LINKER_FLAGS="-latomic"
 
-$(eval $(call BuildPackage,quickjspp))
+define Package/libquickjs/install
+	$(INSTALL_DIR) $(1)/usr/lib/
+	$(CP) $(PKG_INSTALL_DIR)/usr/lib/libquickjs.so $(1)/usr/lib/
+endef
+
+$(eval $(call BuildPackage,libquickjs))
